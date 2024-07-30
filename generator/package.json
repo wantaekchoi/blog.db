@@ -1,0 +1,30 @@
+{
+  "name": "db-generator",
+  "version": "1.0.0",
+  "description": "Database generator for blog application",
+  "main": "index.js",
+  "scripts": {
+    "start": "ts-node generate-data.ts",
+    "build": "tsc",
+    "generate": "ts-node generate-data.ts",
+    "dev": "ts-node-dev --respawn generate-data.ts",
+    "lint": "eslint . --ext .ts",
+    "prepare": "npm run build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@faker-js/faker": "^8.4.1",
+    "pg": "^8.12.0",
+    "reflect-metadata": "^0.2.2",
+    "typeorm": "^0.3.20",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/uuid": "^10.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
+  }
+}
