@@ -7,26 +7,24 @@ import { Reply } from './entities/reply.entity';
 import { faker } from '@faker-js/faker';
 import { v4 as uuidv4 } from 'uuid';
 
-const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '1000', 10);
+const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '5000', 10);
 const USER_COUNT = parseInt(process.env.USER_COUNT || '1000000', 10);
 const BLOG_COUNT = parseInt(process.env.BLOG_COUNT || '100000', 10);
 const POST_COUNT = parseInt(process.env.POST_COUNT || '10000000', 10);
 const COMMENT_COUNT = parseInt(process.env.COMMENT_COUNT || '100000000', 10);
 
-async function generateData() {
-  await AppDataSource.initialize();
+async function getLastId(entityName: string): Promise<number> {
+  const result = await AppDataSource.query(
+    `SELECT id FROM ${entityName} ORDER BY id DESC LIMIT 1`
+  );
+  return result.length > 0 ? result[0].id : 0;
+}
 
+async function generateUsers(startId: number) {
   const userRepository = AppDataSource.getRepository(User);
-  const blogRepository = AppDataSource.getRepository(Blog);
-  const postRepository = AppDataSource.getRepository(Post);
-  const commentRepository = AppDataSource.getRepository(Reply);
-
-  console.log(`Starting data generation with batch size ${BATCH_SIZE}...`);
-
-  console.log('Generating user data...');
-  for (let i = 0; i < USER_COUNT; i += BATCH_SIZE) {
+  for (let i = startId; i <= USER_COUNT; i += BATCH_SIZE) {
     const userBatch: User[] = [];
-    for (let j = 0; j < BATCH_SIZE && i + j < USER_COUNT; j++) {
+    for (let j = 0; j < BATCH_SIZE && i + j <= USER_COUNT; j++) {
       const uniqueEmail = `${faker.internet.email()}_${uuidv4()}`;
       const user = userRepository.create({
         username: faker.internet.userName(),
@@ -37,43 +35,41 @@ async function generateData() {
       userBatch.push(user);
     }
     await userRepository.save(userBatch);
-    console.log(`Saved batch of users up to ${i + BATCH_SIZE}...`);
+    console.log(`Saved batch of users from ID ${i} to ${i + BATCH_SIZE - 1}...`);
   }
-  console.log('User data generation completed.');
+}
 
-  console.log('Generating blog data...');
-  for (let i = 0; i < BLOG_COUNT; i += BATCH_SIZE) {
+async function generateBlogs(startId: number) {
+  const blogRepository = AppDataSource.getRepository(Blog);
+  for (let i = startId; i <= BLOG_COUNT; i += BATCH_SIZE) {
     const blogBatch: Blog[] = [];
-    for (let j = 0; j < BATCH_SIZE && i + j < BLOG_COUNT; j++) {
-      // Randomly assign an owner from the existing users
-      const ownerId = await userRepository.findOneBy({ id: Math.floor(Math.random() * USER_COUNT) });
-      if (!ownerId) continue; // Skip if no owner found (edge case)
+    for (let j = 0; j < BATCH_SIZE && i + j <= BLOG_COUNT; j++) {
+      const ownerId = Math.floor(Math.random() * (USER_COUNT - startId)) + startId + 1;
       const blog = blogRepository.create({
         title: faker.lorem.words(3),
         description: faker.lorem.sentences(2),
-        owner: ownerId,
+        owner: { id: ownerId } as User,
         isPublic: faker.datatype.boolean(),
       });
       blogBatch.push(blog);
     }
     await blogRepository.save(blogBatch);
-    console.log(`Saved batch of blogs up to ${i + BATCH_SIZE}...`);
+    console.log(`Saved batch of blogs from ID ${i} to ${i + BATCH_SIZE - 1}...`);
   }
-  console.log('Blog data generation completed.');
+}
 
-  console.log('Generating post data...');
-  for (let i = 0; i < POST_COUNT; i += BATCH_SIZE) {
+async function generatePosts(startId: number) {
+  const postRepository = AppDataSource.getRepository(Post);
+  for (let i = startId; i <= POST_COUNT; i += BATCH_SIZE) {
     const postBatch: Post[] = [];
-    for (let j = 0; j < BATCH_SIZE && i + j < POST_COUNT; j++) {
-      // Randomly assign a blog and author from the existing entries
-      const blog = await blogRepository.findOneBy({ id: Math.floor(Math.random() * BLOG_COUNT) });
-      const author = await userRepository.findOneBy({ id: Math.floor(Math.random() * USER_COUNT) });
-      if (!blog || !author) continue; // Skip if no blog or author found (edge case)
+    for (let j = 0; j < BATCH_SIZE && i + j <= POST_COUNT; j++) {
+      const blogId = Math.floor(Math.random() * (BLOG_COUNT - startId)) + startId + 1;
+      const authorId = Math.floor(Math.random() * (USER_COUNT - startId)) + startId + 1;
       const post = postRepository.create({
         title: faker.lorem.sentence(),
         content: faker.lorem.paragraphs(5),
-        blog: blog,
-        author: author,
+        blog: { id: blogId } as Blog,
+        author: { id: authorId } as User,
         likes: faker.number.int({ min: 0, max: 100 }),
         dislikes: faker.number.int({ min: 0, max: 100 }),
         views: faker.number.int({ min: 0, max: 1000 }),
@@ -82,34 +78,55 @@ async function generateData() {
       postBatch.push(post);
     }
     await postRepository.save(postBatch);
-    console.log(`Saved batch of posts up to ${i + BATCH_SIZE}...`);
+    console.log(`Saved batch of posts from ID ${i} to ${i + BATCH_SIZE - 1}...`);
   }
-  console.log('Post data generation completed.');
+}
 
-  console.log('Generating comment data...');
-  for (let i = 0; i < COMMENT_COUNT; i += BATCH_SIZE) {
-    const commentBatch: Reply[] = [];
-    for (let j = 0; j < BATCH_SIZE && i + j < COMMENT_COUNT; j++) {
-      // Randomly assign a post and author from the existing entries
-      const post = await postRepository.findOneBy({ id: Math.floor(Math.random() * POST_COUNT) });
-      const author = await userRepository.findOneBy({ id: Math.floor(Math.random() * USER_COUNT) });
-      if (!post || !author) continue; // Skip if no post or author found (edge case)
+async function generateReplies(startId: number) {
+  const replyRepository = AppDataSource.getRepository(Reply);
+  for (let i = startId; i <= COMMENT_COUNT; i += BATCH_SIZE) {
+    const replyBatch: Reply[] = [];
+    for (let j = 0; j < BATCH_SIZE && i + j <= COMMENT_COUNT; j++) {
+      const postId = Math.floor(Math.random() * (POST_COUNT - startId)) + startId + 1;
+      const authorId = Math.floor(Math.random() * (USER_COUNT - startId)) + startId + 1;
+      const parentReplyId = Math.random() > 0.9 ? Math.floor(Math.random() * COMMENT_COUNT) + 1 : null;
 
-      const parentComment = Math.random() > 0.9 ? await commentRepository.findOneBy({ id: Math.floor(Math.random() * COMMENT_COUNT) }) : null;
-      const comment = commentRepository.create({
+      const reply = replyRepository.create({
         content: faker.lorem.sentences(2),
-        post: post,
-        author: author,
+        post: { id: postId } as Post,
+        author: { id: authorId } as User,
+        parentComment: parentReplyId ? { id: parentReplyId } as Reply : undefined,
         likes: faker.number.int({ min: 0, max: 50 }),
         dislikes: faker.number.int({ min: 0, max: 50 }),
-        parentComment: parentComment || undefined,
       });
-      commentBatch.push(comment);
+      replyBatch.push(reply);
     }
-    await commentRepository.save(commentBatch);
-    console.log(`Saved batch of comments up to ${i + BATCH_SIZE}...`);
+    await replyRepository.save(replyBatch);
+    console.log(`Saved batch of replies from ID ${i} to ${i + BATCH_SIZE - 1}...`);
   }
-  console.log('Comment data generation completed.');
+}
+
+async function generateData() {
+  await AppDataSource.initialize();
+
+  const lastUserId = await getLastId('users');
+  const lastBlogId = await getLastId('blogs');
+  const lastPostId = await getLastId('posts');
+  const lastReplyId = await getLastId('replies');
+
+  console.log(`Starting data generation with batch size ${BATCH_SIZE}...`);
+
+  await generateUsers(lastUserId + 1);
+  console.log('User data generation completed.');
+
+  await generateBlogs(lastBlogId + 1);
+  console.log('Blog data generation completed.');
+
+  await generatePosts(lastPostId + 1);
+  console.log('Post data generation completed.');
+
+  await generateReplies(lastReplyId + 1);
+  console.log('Reply data generation completed.');
 
   await AppDataSource.destroy();
   console.log('Database connection closed.');
